@@ -1206,8 +1206,9 @@ xinit(int w, int h)
 	/* adjust fixed window geometry */
 	switch (geometry) {
 	case CellGeometry:
-		win.w = 2 * borderpx + w * win.cw;
-		win.h = 2 * borderpx + h * win.ch;
+	win.w = 2 * win.hborderpx + 2 * borderpx + w * win.cw;
+	win.h = 2 * win.vborderpx + 2 * borderpx + h * win.ch;
+
 		break;
 	case PixelGeometry:
 		win.w = w;
@@ -1637,9 +1638,9 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
 			/* FALLTHROUGH */
 		case 4: /* steady underline */
 			XftDrawRect(xw.draw, &drawcol,
-					borderpx + cx * win.cw,
-					borderpx + (cy + 1) * win.ch - \
-						cursorthickness,
+					win.hborderpx + cx * win.cw,
+					win.vborderpx + (cy + 1) * win.ch - \
+cursorthickness,
 					win.cw, cursorthickness);
 			break;
 		case 5: /* blinking bar */
@@ -1648,9 +1649,9 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
 			/* FALLTHROUGH */
 		case 6: /* steady bar */
 			XftDrawRect(xw.draw, &drawcol,
-					borderpx + cx * win.cw,
-					borderpx + cy * win.ch,
-					cursorthickness, win.ch);
+					win.hborderpx + cx * win.cw,
+					win.vborderpx + cy * win.ch,
+cursorthickness, win.ch);
 			break;
 		case 7: /* blinking st cursor */
 			if (IS_SET(MODE_BLINK))
@@ -1663,21 +1664,21 @@ xdrawcursor(int cx, int cy, Glyph g, int ox, int oy, Glyph og)
 		}
 	} else {
 		XftDrawRect(xw.draw, &drawcol,
-				borderpx + cx * win.cw,
-				borderpx + cy * win.ch,
-				win.cw - 1, 1);
+				win.hborderpx + cx * win.cw,
+				win.vborderpx + cy * win.ch,
+win.cw - 1, 1);
 		XftDrawRect(xw.draw, &drawcol,
-				borderpx + cx * win.cw,
-				borderpx + cy * win.ch,
+				win.hborderpx + cx * win.cw,
+				win.vborderpx + cy * win.ch,
+1, win.ch - 1);
+		XftDrawRect(xw.draw, &drawcol,
+				win.hborderpx + (cx + 1) * win.cw - 1,
+				win.vborderpx + cy * win.ch,
 				1, win.ch - 1);
 		XftDrawRect(xw.draw, &drawcol,
-				borderpx + (cx + 1) * win.cw - 1,
-				borderpx + cy * win.ch,
-				1, win.ch - 1);
-		XftDrawRect(xw.draw, &drawcol,
-				borderpx + cx * win.cw,
-				borderpx + (cy + 1) * win.ch - 1,
-				win.cw, 1);
+				win.hborderpx + cx * win.cw,
+				win.vborderpx + (cy + 1) * win.ch - 1,
+win.cw, 1);
 	}
 }
 
