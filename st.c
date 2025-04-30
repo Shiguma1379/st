@@ -20,6 +20,8 @@
 #include "st.h"
 #include "win.h"
 
+extern char *argv0;
+
 #if   defined(__linux)
  #include <pty.h>
 #elif defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
@@ -153,6 +155,7 @@ typedef struct {
 } STREscape;
 
 static void execsh(char *, char **);
+static int chdir_by_pid(pid_t pid);
 static void stty(char **);
 static void sigchld(int);
 static void ttywriteraw(const char *, size_t);
@@ -636,6 +639,92 @@ getsel(void)
 	return str;
 }
 
+char *
+strstrany(char* s, char** strs) {
+	char *match;
+	for (int i = 0; strs[i]; i++) {
+		if ((match = strstr(s, strs[i]))) {
+			return match;
+		}
+	}
+	return NULL;
+}
+
+void
+highlighturlsline(int row)
+{
+	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
+	char *match;
+	for (int j = 0; j < term.col; j++) {
+		if (term.line[row][j].u < 127) {
+			linestr[j] = term.line[row][j].u;
+		}
+		linestr[term.col] = '\0';
+	}
+	int url_start = -1;
+	while ((match = strstrany(linestr + url_start + 1, urlprefixes))) {
+		url_start = match - linestr;
+		for (int c = url_start; c < term.col && strchr(urlchars, linestr[c]); c++) {
+			term.line[row][c].mode |= ATTR_URL;
+			tsetdirt(row, c);
+		}
+	}
+	free(linestr);
+}
+
+void
+unhighlighturlsline(int row)
+{
+	for (int j = 0; j < term.col; j++) {
+		Glyph* g = &term.line[row][j];
+		if (g->mode & ATTR_URL) {
+			g->mode &= ~ATTR_URL;
+			tsetdirt(row, j);
+		}
+	}
+	return;
+}
+
+int
+followurl(int col, int row) {
+	char *linestr = calloc(sizeof(char), term.col+1); /* assume ascii */
+	char *match;
+	for (int i = 0; i < term.col; i++) {
+		if (term.line[row][i].u < 127) {
+			linestr[i] = term.line[row][i].u;
+		}
+		linestr[term.col] = '\0';
+	}
+	int url_start = -1, found_url = 0;
+	while ((match = strstrany(linestr + url_start + 1, urlprefixes))) {
+		url_start = match - linestr;
+		int url_end = url_start;
+		for (int c = url_start; c < term.col && strchr(urlchars, linestr[c]); c++) {
+			url_end++;
+		}
+		if (url_start <= col && col < url_end) {
+			found_url = 1;
+			linestr[url_end] = '\0';
+			break;
+		}
+	}
+	if (!found_url) {
+		free(linestr);
+		return 0;
+	}
+
+	pid_t chpid;
+	if ((chpid = fork()) == 0) {
+		if (fork() == 0)
+			execlp(urlhandler, urlhandler, linestr + url_start, NULL);
+		exit(1);
+	}
+	if (chpid > 0)
+		waitpid(chpid, NULL, 0);
+	free(linestr);
+    return 1;
+}
+
 void
 selclear(void)
 {
@@ -806,6 +895,7 @@ ttynew(const char *line, char *cmd, const char *out, char **args)
 		if (pledge("stdio rpath tty proc", NULL) == -1)
 			die("pledge\n");
 #endif
+		fcntl(m, F_SETFD, FD_CLOEXEC);
 		close(s);
 		cmdfd = m;
 		signal(SIGCHLD, sigchld);
@@ -1052,6 +1142,40 @@ tswapscreen(void)
 	term.alt = tmp;
 	term.mode ^= MODE_ALTSCREEN;
 	tfulldirt();
+}
+
+void
+newterm(const Arg* a)
+{
+	switch (fork()) {
+	case -1:
+		die("fork failed: %s\n", strerror(errno));
+		break;
+	case 0:
+		switch (fork()) {
+		case -1:
+			fprintf(stderr, "fork failed: %s\n", strerror(errno));
+			_exit(1);
+			break;
+		case 0:
+			chdir_by_pid(pid);
+			execl("/proc/self/exe", argv0, NULL);
+			_exit(1);
+			break;
+		default:
+			_exit(0);
+		}
+	default:
+		wait(NULL);
+	}
+}
+
+static int
+chdir_by_pid(pid_t pid)
+{
+	char buf[32];
+	snprintf(buf, sizeof buf, "/proc/%ld/cwd", (long)pid);
+	return chdir(buf);
 }
 
 void
@@ -2644,6 +2768,8 @@ drawregion(int x1, int y1, int x2, int y2)
 			continue;
 
 		term.dirty[y] = 0;
+		unhighlighturlsline(y);
+		highlighturlsline(y);
 		xdrawline(term.line[y], x1, y, x2);
 	}
 }
